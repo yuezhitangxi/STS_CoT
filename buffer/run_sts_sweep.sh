@@ -18,10 +18,17 @@ NUM_WORKERS=${NUM_WORKERS:-2}
 STS_KMEANS_NITER=${STS_KMEANS_NITER:-20}
 STS_KMEANS_DEVICE=${STS_KMEANS_DEVICE:-auto}
 STS_BANK_METRICS_INTERVAL=${STS_BANK_METRICS_INTERVAL:-50}
+STS_BANK_CACHE_DIR=${STS_BANK_CACHE_DIR:-}
+STS_RUN_FILTER=${STS_RUN_FILTER:-}
 
 RUN_NAMES=(n32_tau1 n64_tau1 n128_tau1 n64_tau0p5 n64_tau2)
 BANK_SIZES=(32 64 128 64 64)
 TEMPERATURES=(1.0 1.0 1.0 0.5 2.0)
+
+should_run() {
+  local run_name=$1
+  [[ -z "$STS_RUN_FILTER" || ",$STS_RUN_FILTER," == *",$run_name,"* ]]
+}
 
 write_status() {
   local status_file=$1
@@ -57,7 +64,8 @@ run_one() {
   local run_dir="$result_root/$run_name"
   local output_dir="$run_dir/train_output"
   local checkpoint="$output_dir/ckpt/final.bin"
-  local bank_cache="$result_root/bank_cache/kmeans_n${bank_size}_seed${TRAIN_SEED}.pt"
+  local cache_dir=${STS_BANK_CACHE_DIR:-$result_root/bank_cache}
+  local bank_cache="$cache_dir/kmeans_n${bank_size}_seed${TRAIN_SEED}.pt"
   local status_file="$run_dir/status.tsv"
   local train_seconds=0
   local eval_seconds=0
@@ -164,6 +172,9 @@ worker_main() {
   local gpu_id=$worker_index
   local index
   for index in "${!RUN_NAMES[@]}"; do
+    if ! should_run "${RUN_NAMES[$index]}"; then
+      continue
+    fi
     if (( index % NUM_WORKERS != worker_index )); then
       continue
     fi
@@ -182,6 +193,9 @@ mkdir -p "$RESULT_ROOT"
 {
   printf 'run\tbank_size\ttemperature\n'
   for index in "${!RUN_NAMES[@]}"; do
+    if ! should_run "${RUN_NAMES[$index]}"; then
+      continue
+    fi
     printf '%s\t%s\t%s\n' "${RUN_NAMES[$index]}" "${BANK_SIZES[$index]}" "${TEMPERATURES[$index]}"
   done
 } > "$RESULT_ROOT/manifest.tsv"

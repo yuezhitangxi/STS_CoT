@@ -72,6 +72,15 @@ DATA_PATH=/path/to/GSM8K \
 nohup bash run_sts_sweep.sh > sts_sweep.log 2>&1 &
 ```
 
+Use `STS_RUN_FILTER` to run a comma-separated subset and
+`STS_BANK_CACHE_DIR` to reuse size-specific KMeans caches across sweeps:
+
+```bash
+STS_RUN_FILTER=n32_tau1,n64_tau1 \
+STS_BANK_CACHE_DIR=./results/sts_bank_cache \
+nohup bash run_sts_sweep.sh > sts_sweep.log 2>&1 &
+```
+
 The default sweep runs five configurations:
 
 ```text
