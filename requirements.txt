@@ -1,0 +1,4 @@
+fastNLP==0.7.0
+torch==2.7.0
+transformers==4.51.0
+tqdm>=4.66.0
