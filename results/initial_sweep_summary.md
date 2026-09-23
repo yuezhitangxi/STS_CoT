@@ -1,4 +1,4 @@
-# Initial STS Sweep Summary
+# Initial STS Sweep Summary (Legacy Initialization)
 
 ## Setup
 
@@ -40,3 +40,5 @@ the bank from 32 to 64 makes both the norm mismatch and accuracy worse in this
 initial implementation.
 
 The remaining sweep configurations were stopped after these two completed runs.
+This result predates the KMeans initialization, shared bank, Xavier query
+initialization, and corrected attention scaling now used by the repository.

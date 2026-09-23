@@ -28,6 +28,10 @@ def mean_position(summary, key):
     return sum(values) / len(values) if values else ''
 
 
+def format_number(value, digits):
+    return '' if value in ('', None) else f'{float(value):.{digits}f}'
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('result_dir', type=Path)
@@ -48,6 +52,7 @@ def main():
 
         result = json.loads(result_path.read_text())
         summary = result['summary']
+        bank = summary.get('bank_diagnostics', {})
         norms = read_norm(run_dir / 'eval_norm_stats_summary.csv')
         norm_value = lambda name: norms.get(name, {}).get('avg_mean_norm', '')
         rows.append({
@@ -69,6 +74,11 @@ def main():
             'attention_entropy': mean_position(summary, 'mean_attention_entropy_by_position'),
             'attention_effective_tokens': mean_position(summary, 'mean_attention_effective_tokens_by_position'),
             'attention_top1': mean_position(summary, 'mean_attention_top1_by_position'),
+            'bank_effective_rank': bank.get('effective_rank', ''),
+            'bank_cosine_mean': bank.get('cosine_mean', ''),
+            'bank_cosine_std': bank.get('cosine_std', ''),
+            'bank_cosine_min': bank.get('cosine_min', ''),
+            'bank_cosine_max': bank.get('cosine_max', ''),
         })
 
     columns = [
@@ -76,6 +86,8 @@ def main():
         'train_seconds', 'eval_seconds', 'input_embedding_norm', 'hidden_norm',
         'query_norm', 'bank_norm', 'sts_output_norm', 'final_prompt_norm',
         'attention_entropy', 'attention_effective_tokens', 'attention_top1',
+        'bank_effective_rank', 'bank_cosine_mean', 'bank_cosine_std',
+        'bank_cosine_min', 'bank_cosine_max',
     ]
     with (args.result_dir / 'summary.csv').open('w', newline='') as handle:
         writer = csv.DictWriter(handle, fieldnames=columns, extrasaction='ignore')
@@ -87,8 +99,8 @@ def main():
     lines = [
         '# STS Sweep Summary',
         '',
-        '| Run | State | N | Tau | Accuracy | Train hours | Eval hours | STS norm | Entropy | Top-1 |',
-        '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|',
+        '| Run | State | N | Tau | Accuracy | Train hours | Eval hours | STS norm | Entropy | Top-1 | Bank rank | Bank cosine |',
+        '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
     ]
     for row in completed:
         train_hours = float(row['train_seconds']) / 3600 if row['train_seconds'] else 0.0
@@ -97,7 +109,8 @@ def main():
             f"| {row['run']} | {row['state']} | {row['bank_size']} | {row['temperature']} | "
             f"{float(row['accuracy']):.2f}% | {train_hours:.2f} | {eval_hours:.2f} | "
             f"{float(row['sts_output_norm']):.4f} | {float(row['attention_entropy']):.4f} | "
-            f"{float(row['attention_top1']):.4f} |"
+            f"{float(row['attention_top1']):.4f} | {format_number(row['bank_effective_rank'], 2)} | "
+            f"{format_number(row['bank_cosine_mean'], 4)} |"
         )
     (args.result_dir / 'summary.md').write_text('\n'.join(lines) + '\n')
 

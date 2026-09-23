@@ -8,7 +8,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 from transformers.cache_utils import Cache
 from fastNLP import logger
 from feedback import match_feedback_norm
-from sts import SoftTokenSelector
+from sts import SharedSoftTokenSelector, initialize_kmeans_bank
 try:
     from norm_monitor import NormMonitor
 except Exception:
@@ -29,6 +29,10 @@ class UnifiedSoftCoT(nn.Module):
         sts_temperature=1.0,
         sts_bank_norm_scale=1.0,
         sts_init_seed=42,
+        sts_bank_cache=None,
+        sts_kmeans_niter=20,
+        sts_kmeans_device='auto',
+        sts_bank_metrics_interval=50,
         **kwargs,
     ):
         super().__init__()
@@ -49,6 +53,8 @@ class UnifiedSoftCoT(nn.Module):
         self.feedback_norm = None
         self.last_feedback_stats = []
         self.last_projection_stats = {}
+        self.sts_bank_metrics_interval = max(int(sts_bank_metrics_interval), 1)
+        self._sts_projection_calls = 0
 
         if num_thought_tokens > 0:
             self.dropout = nn.Dropout(0.0)
@@ -66,17 +72,34 @@ class UnifiedSoftCoT(nn.Module):
                         proj.bias.data.zero_()
             elif projection_type == 'sts':
                 embedding_weight = self.model.get_input_embeddings().weight
-                self.projections = nn.ModuleList([
-                    SoftTokenSelector(
-                        hidden_size=self.model.config.hidden_size,
-                        bank_size=sts_bank_size,
-                        temperature=sts_temperature,
+                loading_checkpoint = (
+                    path_to_projection_module is not None
+                    and path_to_projection_module not in ['None']
+                )
+                if loading_checkpoint:
+                    initial_bank = torch.zeros(
+                        sts_bank_size,
+                        self.model.config.hidden_size,
+                        dtype=torch.float32,
+                    )
+                else:
+                    initial_bank = initialize_kmeans_bank(
                         embedding_weight=embedding_weight,
+                        bank_size=sts_bank_size,
                         excluded_token_ids=self.tokenizer.all_special_ids,
+                        cache_path=sts_bank_cache,
+                        seed=sts_init_seed,
+                        niter=sts_kmeans_niter,
+                        device=sts_kmeans_device,
                         bank_norm_scale=sts_bank_norm_scale,
-                        init_seed=sts_init_seed + i,
-                    ) for i in range(num_thought_tokens)
-                ])
+                    )
+                self.projections = SharedSoftTokenSelector(
+                    hidden_size=self.model.config.hidden_size,
+                    num_positions=num_thought_tokens,
+                    bank_size=sts_bank_size,
+                    temperature=sts_temperature,
+                    initial_bank=initial_bank,
+                )
             else:
                 raise ValueError(f'Unknown projection_type: {projection_type}')
         else:
@@ -113,20 +136,22 @@ class UnifiedSoftCoT(nn.Module):
         }
         for i in range(self.num_thought_tokens):
             token_vec = self.dropout(hidden_states[i])
-            proj_vec = self.projections[i](token_vec)
+            if self.projection_type == 'sts':
+                proj_vec = self.projections(token_vec, i)
+            else:
+                proj_vec = self.projections[i](token_vec)
             projected_list.append(proj_vec)
             if self.projection_type != 'sts':
                 continue
 
-            module = self.projections[i]
-            stats = module.detached_stats()
+            module = self.projections.queries[i]
+            stats = self.projections.detached_selection_stats(i)
             for key in stats_by_name:
                 stats_by_name[key].append(stats[key])
             if norm_monitor is not None:
                 meta = dict(norm_meta or {})
                 meta['thought_position'] = i
                 norm_monitor.record_tensor('sts_query', module.last_query, meta)
-                norm_monitor.record_tensor('sts_soft_token_bank', module.soft_token_bank, meta)
                 norm_monitor.record_tensor('sts_output', module.last_output, meta)
                 norm_monitor.record_tensor(
                     'sts_attention_entropy',
@@ -139,8 +164,27 @@ class UnifiedSoftCoT(nn.Module):
                     meta,
                 )
 
+        self._sts_projection_calls += 1
+        monitor_active = norm_monitor is not None and getattr(norm_monitor, 'active', True)
+        if self.projection_type == 'sts' and monitor_active:
+            if (self._sts_projection_calls - 1) % self.sts_bank_metrics_interval == 0:
+                meta = dict(norm_meta or {})
+                norm_monitor.record_tensor(
+                    'sts_soft_token_bank', self.projections.soft_token_bank, meta,
+                )
+                diagnostics = self.projections.bank_diagnostics()
+                for key, value in diagnostics.items():
+                    norm_monitor.record_scalar(
+                        f'sts_bank_{key}', value, meta,
+                    )
+
         self.last_projection_stats = stats_by_name if self.projection_type == 'sts' else {}
         return torch.stack(projected_list)
+
+    def get_sts_bank_diagnostics(self):
+        if self.projection_type != 'sts':
+            return {}
+        return self.projections.bank_diagnostics()
 
     def save_pretrained(self, save_model_dir_root: str, **kwargs):
         os.makedirs(save_model_dir_root, exist_ok=True)

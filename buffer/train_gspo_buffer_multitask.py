@@ -175,6 +175,10 @@ def parse_args():
     ap.add_argument("--sts_bank_size", type=int, default=64)
     ap.add_argument("--sts_temperature", type=float, default=1.0)
     ap.add_argument("--sts_bank_norm_scale", type=float, default=1.0)
+    ap.add_argument("--sts_bank_cache", type=str, default=None)
+    ap.add_argument("--sts_kmeans_niter", type=int, default=20)
+    ap.add_argument("--sts_kmeans_device", choices=['auto', 'cpu', 'gpu'], default='auto')
+    ap.add_argument("--sts_bank_metrics_interval", type=int, default=50)
     ap.add_argument("--feedback_mode", choices=['vanilla', 'scale_match'], default='vanilla')
     ap.add_argument("--feedback_norm", type=float, default=None,
                     help='Reference L2 norm; defaults to the training-prompt embedding mean')
@@ -225,6 +229,10 @@ def main():
         sts_temperature=args.sts_temperature,
         sts_bank_norm_scale=args.sts_bank_norm_scale,
         sts_init_seed=args.seed,
+        sts_bank_cache=args.sts_bank_cache,
+        sts_kmeans_niter=args.sts_kmeans_niter,
+        sts_kmeans_device=args.sts_kmeans_device,
+        sts_bank_metrics_interval=args.sts_bank_metrics_interval,
     )
     model.eval()
     dev = model.device

@@ -35,6 +35,10 @@ class NormMonitor:
     def _active(self):
         return (not self.disabled) and (self.records_written < self.max_records)
 
+    @property
+    def active(self):
+        return self._active()
+
     def record_tensor(self, name, tensor, meta=None):
         if not self._active() or tensor is None:
             return
@@ -115,6 +119,41 @@ class NormMonitor:
             agg['std_abs_sum'] += rec['std_abs']
             agg['nan_count'] += rec['nan_count']
             agg['inf_count'] += rec['inf_count']
+
+    def record_scalar(self, name, value, meta=None):
+        if not self._active():
+            return
+        number = float(value)
+        finite = math.isfinite(number)
+        clean = number if finite else 0.0
+        rec = {
+            'time': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'tensor_name': name,
+            'shape': [],
+            'numel': 1,
+            'mean_norm': clean,
+            'std_norm': 0.0,
+            'min_norm': clean,
+            'max_norm': clean,
+            'mean_abs': abs(clean),
+            'std_abs': 0.0,
+            'nan_count': int(math.isnan(number)),
+            'inf_count': int(math.isinf(number)),
+        }
+        if meta:
+            rec.update(meta)
+        self._fh.write(json.dumps(rec, ensure_ascii=False) + '\n')
+        self.records_written += 1
+        agg = self.aggregates[name]
+        agg['count'] += 1
+        agg['mean_norm_sum'] += rec['mean_norm']
+        agg['std_norm_sum'] += rec['std_norm']
+        agg['min_norm'] = min(agg['min_norm'], rec['min_norm'])
+        agg['max_norm'] = max(agg['max_norm'], rec['max_norm'])
+        agg['mean_abs_sum'] += rec['mean_abs']
+        agg['std_abs_sum'] += rec['std_abs']
+        agg['nan_count'] += rec['nan_count']
+        agg['inf_count'] += rec['inf_count']
 
     def close(self):
         if self.disabled:

@@ -1,9 +1,10 @@
 # STS-CoT
 
 STS-CoT replaces the linear Projection Model in Self-SoftCoT with Soft Token
-Selection (STS). For each soft-thought hidden state, STS forms a query, attends
-over a learnable bank initialized from Qwen vocabulary embeddings, and feeds the
-weighted token mixture back to the frozen language model.
+Selection (STS). For each soft-thought hidden state, STS forms a position-specific
+query, attends over one shared learnable bank initialized by KMeans over Qwen
+vocabulary embeddings, and feeds the weighted token mixture back to the frozen
+language model.
 
 This repository currently targets **Qwen-2.5-7B-Instruct** and GSM8K. It is a
 research prototype; the first sweep is included to document both the method and
@@ -15,16 +16,17 @@ For hidden state `h_k` and soft token bank `S = {s_i}`:
 
 ```text
 q_k = W_q h_k
-alpha_i = softmax(q_k^T s_i / (sqrt(d) * tau))
+alpha_i = softmax(q_k^T s_i / tau)
 e_k = sum_i alpha_i s_i
 ```
 
-The Qwen backbone is frozen. Only the position-wise query projections and soft
-token banks are optimized by the original Self-SoftCoT GSPO objective.
+The Qwen backbone is frozen. Thought positions have independent query projections
+initialized with Xavier uniform, but share one soft token bank. The queries and
+shared bank are optimized by the original Self-SoftCoT GSPO objective.
 
 ## Files
 
-- `buffer/sts.py`: STS module and vocabulary-based initialization.
+- `buffer/sts.py`: shared-bank STS module and FAISS KMeans initialization.
 - `buffer/unified_llm_model.py`: Qwen wrapper with linear/STS projection modes.
 - `buffer/train_gspo_buffer_multitask.py`: GSPO training entry point.
 - `buffer/evaluate_unified.py`: single-seed evaluation and metric collection.
@@ -41,6 +43,20 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Creating a new bank also requires FAISS. GPU FAISS is recommended for the full
+Qwen vocabulary:
+
+```bash
+conda install -c pytorch -c nvidia -c conda-forge faiss-gpu=1.15.1
+```
+
+FAISS is only imported when a KMeans cache must be created. Evaluation from an
+STS checkpoint does not rerun KMeans.
+
+The shared-bank STS checkpoint layout is not compatible with checkpoints from
+the earlier two-bank implementation. Start a new STS run after this revision;
+linear-projection baseline checkpoints are unaffected.
+
 Prepare GSM8K in the layout expected by `buffer/data_loader.py`, or reuse the
 data preparation from the upstream Self-SoftCoT project.
 
@@ -50,7 +66,6 @@ data preparation from the upstream Self-SoftCoT project.
 cd buffer
 MODEL_ID=/path/to/Qwen2.5-7B-Instruct \
 DATA_PATH=/path/to/GSM8K \
-CUDA_VISIBLE_DEVICES=0,1 \
 nohup bash run_sts_sweep.sh > sts_sweep.log 2>&1 &
 ```
 
@@ -60,18 +75,19 @@ The default sweep runs five configurations:
 (N, tau) = (32, 1.0), (64, 1.0), (128, 1.0), (64, 0.5), (64, 2.0)
 ```
 
-Each completed training run is evaluated with seed 41. The script writes
-per-run status files and produces `summary.csv` and `summary.md` when the full
-sweep finishes. Large artifacts, datasets, checkpoints, raw predictions, and
-logs are intentionally excluded from Git.
+Each bank size is clustered once and cached under the run directory. Each
+completed training run is evaluated with seed 41. The script records attention
+entropy, top-1 weight, STS output norm, bank effective rank, and off-diagonal
+pairwise cosine statistics. It produces `summary.csv` and `summary.md` when the
+full sweep finishes. Large artifacts, datasets, checkpoints, raw predictions,
+and logs are intentionally excluded from Git.
 
 ## Initial Finding
 
-The first two configurations underperformed the reproduced linear-projection
-baseline. Diagnostics show that attention remained close to uniform, causing
-the convex combination of randomly sampled vocabulary embeddings to have a
-much smaller norm than ordinary token embeddings. See
-`results/initial_sweep_summary.md` for exact measurements.
+The first two configurations of the earlier random-bank, identity-query,
+`sqrt(d)`-scaled implementation underperformed the reproduced linear-projection
+baseline. Those diagnostics motivated the current KMeans/shared-bank/Xavier
+revision. See `results/initial_sweep_summary.md` for the legacy measurements.
 
 ## Attribution
 

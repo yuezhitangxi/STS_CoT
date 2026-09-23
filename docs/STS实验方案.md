@@ -39,11 +39,11 @@ e_k = sum_i alpha_i s_i
 
 ```text
 q_k = W_q h_k
-alpha_i = softmax(q_k^T s_i / sqrt(d))
+alpha_i = softmax(q_k^T s_i / tau)
 e_k = sum_i alpha_i s_i
 ```
 
-Soft Token Bank `S` 是 `N` 个可学习向量，建议用 Qwen 词表 embedding 采样或统计均值初始化，使其初始 norm 接近普通 token embedding。
+Soft Token Bank `S` 是 `N` 个可学习向量。对排除特殊 token 后的完整 Qwen 词表 embedding 做 KMeans，直接使用聚类中心初始化 Bank。两个 thought position 共享同一个 Bank，但分别使用 Xavier 初始化的独立 `W_q`。
 
 ## 实现范围
 
@@ -51,8 +51,9 @@ Soft Token Bank `S` 是 `N` 个可学习向量，建议用 Qwen 词表 embedding
 
 - 输入：第 `k` 个 soft thought hidden state `h_k`
 - 输出：反馈给 LLM 的 soft embedding `e_k`
-- 每个 thought position 可以共享同一个 STS，也可以 position-wise 独立 STS
-- 第一版优先做 position-wise 独立 STS，对齐原 Self-SoftCoT 的 position-wise projection 设定
+- 两个 thought position 共享同一个 Soft Token Bank
+- 每个 thought position 保留独立的 `W_q`，并使用 Xavier uniform 初始化
+- KMeans 中心按 bank size 和 seed 缓存，评测 checkpoint 时不重复聚类
 
 不改动：
 
@@ -72,18 +73,17 @@ Soft Token Bank `S` 是 `N` 个可学习向量，建议用 Qwen 词表 embedding
 |---|---:|---|
 | soft token bank size `N` | `16, 32, 64, 128` | 图片方案中使用 `64`，先围绕 64 搜索 |
 | query dim `d_q` | `hidden_size, 1024, 2048` | 若 `d_q < hidden_size`，同时学习 `W_q` 和 bank projection |
-| temperature `tau` | `0.5, 1.0, 2.0` | attention logits 使用 `q^T s / (sqrt(d) * tau)` |
-| STS 是否 position-wise | `shared, independent` | `independent` 对齐原 position-wise projection |
-| bank 初始化 | `vocab_sample, vocab_mean_noise, normal_scaled` | 优先保证 bank norm 接近 token embedding norm |
+| temperature `tau` | `0.5, 1.0, 2.0` | attention logits 使用 `q^T s / tau` |
+| bank 初始化 | `kmeans` | 对完整非特殊词表 embedding 聚类，使用聚类中心 |
 | bank norm scale | `0.5, 1.0, 2.0` | 初始化后整体缩放，用于控制反馈尺度 |
 | top-k selection | `none, 8, 16` | 可选稀疏化；第一轮可先不用 |
 | entropy regularization | `0, 1e-4, 1e-3` | 防止 attention 过早塌缩到少数 soft tokens |
 
 建议第一轮搜索不要全组合，采用分阶段：
 
-1. 固定 `d_q=hidden_size`、`tau=1.0`、`independent`、`vocab_sample`，搜索 `N = 16, 32, 64, 128`。
+1. 固定 `d_q=hidden_size`、`tau=1.0`、共享 Bank、KMeans 初始化，搜索 `N = 16, 32, 64, 128`。
 2. 选最好的 `N` 后，搜索 `tau = 0.5, 1.0, 2.0`。
-3. 再比较 `shared` 与 `independent`。
+3. 根据 attention entropy、Bank effective rank 和 cosine similarity 判断是否发生塌缩。
 4. 最后微调 `bank norm scale` 和 `entropy regularization`。
 
 ## 对照实验
@@ -93,7 +93,7 @@ Soft Token Bank `S` 是 `N` 个可学习向量，建议用 Qwen 词表 embedding
 | 实验 | Projection 形式 | 目的 |
 |---|---|---|
 | baseline | 原 Self-SoftCoT Linear Projection | 复现实验基线 |
-| STS-main | STS，`N=64`，position-wise independent | 验证核心改动 |
+| STS-main | STS，`N=64`，共享 KMeans Bank | 验证核心改动 |
 | STS-bank-size | STS，搜索 `N` | 看 token bank 容量影响 |
 | STS-temperature | STS，搜索 `tau` | 看选择分布锐度影响 |
 | STS-scale | STS，搜索 bank norm scale | 看反馈 norm 是否影响性能 |
@@ -108,8 +108,10 @@ Soft Token Bank `S` 是 `N` 个可学习向量，建议用 Qwen 词表 embedding
 - STS 输出 `e_k` norm
 - STS 输出与普通 token embedding norm 的比例
 - attention entropy
-- top-1 / top-5 soft token 使用频率
+- top-1 soft token 使用频率
 - 不同 thought position 的 token bank 使用差异
+- Bank effective rank
+- Bank token 两两 cosine similarity 的 mean/std/min/max
 - NaN/Inf 检测
 - GSM8K accuracy
 - 单 seed 推理耗时
@@ -123,15 +125,18 @@ Soft Token Bank `S` 是 `N` 个可学习向量，建议用 Qwen 词表 embedding
 - attention 分布不是完全均匀，也不是一开始就塌缩到单个 token。
 - 在相同训练预算下，GSM8K accuracy 不低于原 Projection baseline，最好更稳定。
 
-## 第一版推荐配置
+## 当前推荐配置
 
 ```text
 N = 64
 d_q = hidden_size
 temperature = 1.0
-position-wise = independent
-bank_init = vocab_sample
+position-wise query = independent
+soft token bank = shared
+bank_init = kmeans
 bank_norm_scale = 1.0
+W_q init = xavier_uniform
+attention_scaling = qS^T / tau
 top_k = none
 entropy_reg = 1e-4
 ```

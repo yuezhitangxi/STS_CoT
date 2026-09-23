@@ -51,6 +51,10 @@ def parse_args():
     parser.add_argument('--sts_bank_size', type=int, default=64)
     parser.add_argument('--sts_temperature', type=float, default=1.0)
     parser.add_argument('--sts_bank_norm_scale', type=float, default=1.0)
+    parser.add_argument('--sts_bank_cache', type=str, default=None)
+    parser.add_argument('--sts_kmeans_niter', type=int, default=20)
+    parser.add_argument('--sts_kmeans_device', choices=['auto', 'cpu', 'gpu'], default='auto')
+    parser.add_argument('--sts_bank_metrics_interval', type=int, default=50)
 
     return parser.parse_args()
 
@@ -102,6 +106,10 @@ def main():
         sts_temperature=args.sts_temperature,
         sts_bank_norm_scale=args.sts_bank_norm_scale,
         sts_init_seed=42,
+        sts_bank_cache=args.sts_bank_cache,
+        sts_kmeans_niter=args.sts_kmeans_niter,
+        sts_kmeans_device=args.sts_kmeans_device,
+        sts_bank_metrics_interval=args.sts_bank_metrics_interval,
     )
     model.eval()
     logger.info(f"Model loaded. N={args.num_thought_tokens}, device={model.device}")
@@ -262,6 +270,7 @@ def main():
                     [r['feedback'][key] for r in records], dtype=torch.float64,
                 ).mean(dim=0).tolist()
             if args.projection_type == 'sts':
+                summary['bank_diagnostics'] = model.get_sts_bank_diagnostics()
                 top1_usage = []
                 for position in range(args.num_thought_tokens):
                     counts = {}

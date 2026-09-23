@@ -15,6 +15,9 @@ TRAIN_STEPS=${TRAIN_STEPS:-150}
 MAX_DATA_EPOCHS=${MAX_DATA_EPOCHS:-1}
 MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-1024}
 NUM_WORKERS=${NUM_WORKERS:-2}
+STS_KMEANS_NITER=${STS_KMEANS_NITER:-20}
+STS_KMEANS_DEVICE=${STS_KMEANS_DEVICE:-auto}
+STS_BANK_METRICS_INTERVAL=${STS_BANK_METRICS_INTERVAL:-50}
 
 RUN_NAMES=(n32_tau1 n64_tau1 n128_tau1 n64_tau0p5 n64_tau2)
 BANK_SIZES=(32 64 128 64 64)
@@ -54,13 +57,14 @@ run_one() {
   local run_dir="$result_root/$run_name"
   local output_dir="$run_dir/train_output"
   local checkpoint="$output_dir/ckpt/final.bin"
+  local bank_cache="$result_root/bank_cache/kmeans_n${bank_size}_seed${TRAIN_SEED}.pt"
   local status_file="$run_dir/status.tsv"
   local train_seconds=0
   local eval_seconds=0
   local train_exit=0
   local eval_exit=0
 
-  mkdir -p "$run_dir"
+  mkdir -p "$run_dir" "$(dirname "$bank_cache")"
   if [[ -f "$run_dir/DONE" && -f "$run_dir/eval_results.json" ]]; then
     return 0
   fi
@@ -95,6 +99,10 @@ run_one() {
       --sts_bank_size "$bank_size" \
       --sts_temperature "$temperature" \
       --sts_bank_norm_scale 1.0 \
+      --sts_bank_cache "$bank_cache" \
+      --sts_kmeans_niter "$STS_KMEANS_NITER" \
+      --sts_kmeans_device "$STS_KMEANS_DEVICE" \
+      --sts_bank_metrics_interval "$STS_BANK_METRICS_INTERVAL" \
       --feedback_mode vanilla \
       --norm_stats_file "$run_dir/train_norm_stats.jsonl" \
       --norm_stats_max_records 3000 \
@@ -128,6 +136,10 @@ run_one() {
     --sts_bank_size "$bank_size" \
     --sts_temperature "$temperature" \
     --sts_bank_norm_scale 1.0 \
+    --sts_bank_cache "$bank_cache" \
+    --sts_kmeans_niter "$STS_KMEANS_NITER" \
+    --sts_kmeans_device "$STS_KMEANS_DEVICE" \
+    --sts_bank_metrics_interval "$STS_BANK_METRICS_INTERVAL" \
     --feedback_mode vanilla \
     --results_file "$run_dir/eval_results.json" \
     --norm_stats_file "$run_dir/eval_norm_stats.jsonl" \
