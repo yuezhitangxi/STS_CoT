@@ -47,8 +47,11 @@ Creating a new bank also requires FAISS. GPU FAISS is recommended for the full
 Qwen vocabulary:
 
 ```bash
-conda install -c pytorch -c nvidia -c conda-forge faiss-gpu=1.15.1
+conda install -c pytorch -c nvidia -c conda-forge faiss-gpu=1.13.2
 ```
+
+Version 1.13.2 is the tested build for the project server's Python 3.10 and
+CUDA 12.6 environment.
 
 FAISS is only imported when a KMeans cache must be created. Evaluation from an
 STS checkpoint does not rerun KMeans.
