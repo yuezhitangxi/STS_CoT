@@ -179,6 +179,7 @@ def parse_args():
     ap.add_argument("--sts_kmeans_niter", type=int, default=20)
     ap.add_argument("--sts_kmeans_device", choices=['auto', 'cpu', 'gpu'], default='auto')
     ap.add_argument("--sts_bank_metrics_interval", type=int, default=50)
+    ap.add_argument("--sts_scale_by_sqrt_d", action='store_true')
     ap.add_argument("--feedback_mode", choices=['vanilla', 'scale_match'], default='vanilla')
     ap.add_argument("--feedback_norm", type=float, default=None,
                     help='Reference L2 norm; defaults to the training-prompt embedding mean')
@@ -233,6 +234,7 @@ def main():
         sts_kmeans_niter=args.sts_kmeans_niter,
         sts_kmeans_device=args.sts_kmeans_device,
         sts_bank_metrics_interval=args.sts_bank_metrics_interval,
+        sts_scale_by_sqrt_d=args.sts_scale_by_sqrt_d,
     )
     model.eval()
     dev = model.device

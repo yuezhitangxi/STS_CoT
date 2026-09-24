@@ -58,6 +58,26 @@ class SharedSoftTokenSelectorTest(unittest.TestCase):
         expected_attention = torch.softmax(torch.tensor([0.5, 0.0]), dim=0)
         self.assertTrue(torch.allclose(output.float(), expected_attention, atol=2e-3))
 
+    def test_optional_sqrt_hidden_size_scaling(self):
+        bank = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+        selector = SharedSoftTokenSelector(
+            2,
+            1,
+            2,
+            2.0,
+            bank,
+            scale_by_sqrt_d=True,
+        )
+        with torch.no_grad():
+            selector.queries[0].query.weight.copy_(torch.eye(2))
+
+        output = selector(torch.tensor([1.0, 0.0], dtype=torch.bfloat16), 0)
+        expected_attention = torch.softmax(
+            torch.tensor([1.0 / (2.0 * math.sqrt(2.0)), 0.0]),
+            dim=0,
+        )
+        self.assertTrue(torch.allclose(output.float(), expected_attention, atol=2e-3))
+
     def test_positions_share_bank_and_receive_gradients(self):
         torch.manual_seed(7)
         selector = SharedSoftTokenSelector(

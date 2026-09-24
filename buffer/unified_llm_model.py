@@ -33,6 +33,7 @@ class UnifiedSoftCoT(nn.Module):
         sts_kmeans_niter=20,
         sts_kmeans_device='auto',
         sts_bank_metrics_interval=50,
+        sts_scale_by_sqrt_d=False,
         **kwargs,
     ):
         super().__init__()
@@ -99,6 +100,7 @@ class UnifiedSoftCoT(nn.Module):
                     bank_size=sts_bank_size,
                     temperature=sts_temperature,
                     initial_bank=initial_bank,
+                    scale_by_sqrt_d=sts_scale_by_sqrt_d,
                 )
             else:
                 raise ValueError(f'Unknown projection_type: {projection_type}')

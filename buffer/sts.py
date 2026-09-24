@@ -114,9 +114,9 @@ class SoftTokenQuery(nn.Module):
         self.last_attention = None
         self.last_output = None
 
-    def forward(self, hidden_state, soft_token_bank, temperature):
+    def forward(self, hidden_state, soft_token_bank, logit_divisor):
         query = self.query(hidden_state)
-        logits = F.linear(query.float(), soft_token_bank.float()) / temperature
+        logits = F.linear(query.float(), soft_token_bank.float()) / logit_divisor
         attention = torch.softmax(logits, dim=-1)
         output = torch.matmul(attention, soft_token_bank.float()).to(hidden_state.dtype)
         self.last_query = query.detach()
@@ -128,7 +128,15 @@ class SoftTokenQuery(nn.Module):
 class SharedSoftTokenSelector(nn.Module):
     """Position-specific queries over one shared learnable soft token bank."""
 
-    def __init__(self, hidden_size, num_positions, bank_size, temperature, initial_bank):
+    def __init__(
+        self,
+        hidden_size,
+        num_positions,
+        bank_size,
+        temperature,
+        initial_bank,
+        scale_by_sqrt_d=False,
+    ):
         super().__init__()
         if bank_size <= 0:
             raise ValueError('bank_size must be positive')
@@ -143,6 +151,10 @@ class SharedSoftTokenSelector(nn.Module):
         self.hidden_size = int(hidden_size)
         self.bank_size = int(bank_size)
         self.temperature = float(temperature)
+        self.scale_by_sqrt_d = bool(scale_by_sqrt_d)
+        self.logit_divisor = self.temperature * (
+            math.sqrt(self.hidden_size) if self.scale_by_sqrt_d else 1.0
+        )
         self.soft_token_bank = nn.Parameter(initial_bank.to(dtype=torch.bfloat16))
         self.queries = nn.ModuleList([
             SoftTokenQuery(hidden_size) for _ in range(num_positions)
@@ -152,7 +164,7 @@ class SharedSoftTokenSelector(nn.Module):
         return self.queries[position](
             hidden_state,
             self.soft_token_bank,
-            self.temperature,
+            self.logit_divisor,
         )
 
     def detached_selection_stats(self, position):

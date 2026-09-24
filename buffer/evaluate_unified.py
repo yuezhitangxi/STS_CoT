@@ -55,6 +55,7 @@ def parse_args():
     parser.add_argument('--sts_kmeans_niter', type=int, default=20)
     parser.add_argument('--sts_kmeans_device', choices=['auto', 'cpu', 'gpu'], default='auto')
     parser.add_argument('--sts_bank_metrics_interval', type=int, default=50)
+    parser.add_argument('--sts_scale_by_sqrt_d', action='store_true')
 
     return parser.parse_args()
 
@@ -110,6 +111,7 @@ def main():
         sts_kmeans_niter=args.sts_kmeans_niter,
         sts_kmeans_device=args.sts_kmeans_device,
         sts_bank_metrics_interval=args.sts_bank_metrics_interval,
+        sts_scale_by_sqrt_d=args.sts_scale_by_sqrt_d,
     )
     model.eval()
     logger.info(f"Model loaded. N={args.num_thought_tokens}, device={model.device}")

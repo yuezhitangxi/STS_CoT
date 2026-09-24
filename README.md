@@ -16,9 +16,13 @@ For hidden state `h_k` and soft token bank `S = {s_i}`:
 
 ```text
 q_k = W_q h_k
-alpha_i = softmax(q_k^T s_i / tau)
+alpha_i = softmax(q_k^T s_i / (c * tau))
 e_k = sum_i alpha_i s_i
 ```
+
+The main variant uses `c = 1`. Set `STS_SCALE_BY_SQRT_D=1` in the sweep
+launcher (or pass `--sts_scale_by_sqrt_d` directly) for the controlled
+`c = sqrt(d)` scaling ablation.
 
 The Qwen backbone is frozen. Thought positions have independent query projections
 initialized with Xavier uniform, but share one soft token bank. The queries and

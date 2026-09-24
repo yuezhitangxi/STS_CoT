@@ -20,6 +20,7 @@ STS_KMEANS_DEVICE=${STS_KMEANS_DEVICE:-auto}
 STS_BANK_METRICS_INTERVAL=${STS_BANK_METRICS_INTERVAL:-50}
 STS_BANK_CACHE_DIR=${STS_BANK_CACHE_DIR:-}
 STS_RUN_FILTER=${STS_RUN_FILTER:-}
+STS_SCALE_BY_SQRT_D=${STS_SCALE_BY_SQRT_D:-0}
 
 RUN_NAMES=(n32_tau1 n64_tau1 n128_tau1 n64_tau0p5 n64_tau2)
 BANK_SIZES=(32 64 128 64 64)
@@ -46,6 +47,7 @@ write_status() {
     printf 'run\t%s\n' "$run_name"
     printf 'bank_size\t%s\n' "$bank_size"
     printf 'temperature\t%s\n' "$temperature"
+    printf 'scale_by_sqrt_d\t%s\n' "$STS_SCALE_BY_SQRT_D"
     printf 'gpu\t%s\n' "$gpu_id"
     printf 'train_seconds\t%s\n' "$train_seconds"
     printf 'eval_seconds\t%s\n' "$eval_seconds"
@@ -71,6 +73,11 @@ run_one() {
   local eval_seconds=0
   local train_exit=0
   local eval_exit=0
+  local sts_scale_args=()
+
+  if [[ "$STS_SCALE_BY_SQRT_D" == "1" ]]; then
+    sts_scale_args+=(--sts_scale_by_sqrt_d)
+  fi
 
   mkdir -p "$run_dir" "$(dirname "$bank_cache")"
   if [[ -f "$run_dir/DONE" && -f "$run_dir/eval_results.json" ]]; then
@@ -111,6 +118,7 @@ run_one() {
       --sts_kmeans_niter "$STS_KMEANS_NITER" \
       --sts_kmeans_device "$STS_KMEANS_DEVICE" \
       --sts_bank_metrics_interval "$STS_BANK_METRICS_INTERVAL" \
+      "${sts_scale_args[@]}" \
       --feedback_mode vanilla \
       --norm_stats_file "$run_dir/train_norm_stats.jsonl" \
       --norm_stats_max_records 3000 \
@@ -148,6 +156,7 @@ run_one() {
     --sts_kmeans_niter "$STS_KMEANS_NITER" \
     --sts_kmeans_device "$STS_KMEANS_DEVICE" \
     --sts_bank_metrics_interval "$STS_BANK_METRICS_INTERVAL" \
+    "${sts_scale_args[@]}" \
     --feedback_mode vanilla \
     --results_file "$run_dir/eval_results.json" \
     --norm_stats_file "$run_dir/eval_norm_stats.jsonl" \
@@ -191,12 +200,12 @@ RUN_ID=${RUN_ID:-${1:-$(date +%Y%m%d_%H%M%S)}}
 RESULT_ROOT="$RESULT_BASE/$RUN_ID"
 mkdir -p "$RESULT_ROOT"
 {
-  printf 'run\tbank_size\ttemperature\n'
+  printf 'run\tbank_size\ttemperature\tscale_by_sqrt_d\n'
   for index in "${!RUN_NAMES[@]}"; do
     if ! should_run "${RUN_NAMES[$index]}"; then
       continue
     fi
-    printf '%s\t%s\t%s\n' "${RUN_NAMES[$index]}" "${BANK_SIZES[$index]}" "${TEMPERATURES[$index]}"
+    printf '%s\t%s\t%s\t%s\n' "${RUN_NAMES[$index]}" "${BANK_SIZES[$index]}" "${TEMPERATURES[$index]}" "$STS_SCALE_BY_SQRT_D"
   done
 } > "$RESULT_ROOT/manifest.tsv"
 
