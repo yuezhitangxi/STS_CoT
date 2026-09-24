@@ -38,6 +38,7 @@ shared bank are optimized by the original Self-SoftCoT GSPO objective.
 - `buffer/norm_monitor.py`: embedding, hidden-state, query, bank, output, and attention statistics.
 - `results/initial_sweep_summary.md`: compact results from the first completed configurations.
 - `docs/STS实验方案.md`: experiment proposal in Chinese.
+- `docs/STS实验结果汇总.md`: consolidated completed results and diagnostics.
 
 ## Setup
 
